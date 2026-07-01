@@ -52,9 +52,9 @@ def kb_content_type() -> InlineKeyboardMarkup:
 
 def kb_choose_year() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="Через 1 год", callback_data="year_2027")
-    builder.button(text="Через 2 года", callback_data="year_2028")
-    builder.button(text="Через 3 года", callback_data="year_2029")
+    builder.button(text="Через 1 год", callback_data="year_1")
+    builder.button(text="Через 2 года", callback_data="year_2")
+    builder.button(text="Через 3 года", callback_data="year_3")
     builder.adjust(3)
     return builder.as_markup()
 

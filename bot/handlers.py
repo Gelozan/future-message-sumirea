@@ -1,6 +1,9 @@
 import json
 import logging
 from datetime import date
+import os
+import hashlib
+from pathlib import Path
 
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart
@@ -56,10 +59,32 @@ CONTENT_PROMPT = {
 
 VIDEO_SIZE_LIMIT = 40 * 1024 * 1024
 
+MEDIA_DIR = Path("/app/media")
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+async def _download_file(bot: Bot, file_id: str, content_type: str) -> str | None:
+    """Скачивает файл в /app/media, возвращает относительный путь или None при ошибке."""
+    try:
+        MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        tg_file = await bot.get_file(file_id)
+
+        ext_map = {"voice": "ogg", "video_note": "mp4", "video": "mp4"}
+        ext = ext_map.get(content_type, "bin")
+
+        # Имя файла — хэш file_id, чтобы не дублировать при перезаписи
+        name = hashlib.md5(file_id.encode()).hexdigest()
+        filename = f"{content_type}_{name}.{ext}"
+        dest = MEDIA_DIR / filename
+
+        await bot.download_file(tg_file.file_path, destination=dest)
+        return str(dest)
+    except Exception as e:
+        logger.error(f"Ошибка скачивания файла {file_id}: {e}")
+        return None
+    
 async def _show_main_menu(target: Message | CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     text = (
@@ -122,7 +147,66 @@ async def _wrong_content_type(message: Message, state: FSMContext, bot: Bot) -> 
         text=f"❌ Неверный тип файла.\n\n{CONTENT_PROMPT.get(data.get('content_type', ''), 'Отправьте правильный тип файла:')}",
         reply_markup=kb_home(),
     )
-    
+
+def entities_to_html(text: str, entities: list[dict]) -> str:
+    """Конвертирует текст + entities в HTML-разметку."""
+    if not entities:
+        return _escape_html(text)
+
+    # Теги открытия/закрытия по позиции
+    opens: dict[int, list[str]] = {}
+    closes: dict[int, list[str]] = {}
+
+    for e in entities:
+        offset = e["offset"]
+        end = offset + e["length"]
+        etype = e["type"]
+
+        tag_open, tag_close = _entity_tags(e)
+        if tag_open:
+            opens.setdefault(offset, []).append(tag_open)
+            closes.setdefault(end, []).insert(0, tag_close)
+
+    result = []
+    for i, char in enumerate(text):
+        for tag in closes.get(i, []):
+            result.append(tag)
+        for tag in opens.get(i, []):
+            result.append(tag)
+        result.append(_escape_html(char))
+    # Закрываем теги в конце
+    for tag in closes.get(len(text), []):
+        result.append(tag)
+
+    return "".join(result)
+
+
+def _escape_html(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _entity_tags(e: dict) -> tuple[str, str]:
+    etype = e["type"]
+    if etype == "bold":
+        return "<b>", "</b>"
+    if etype == "italic":
+        return "<i>", "</i>"
+    if etype == "underline":
+        return "<u>", "</u>"
+    if etype == "strikethrough":
+        return "<s>", "</s>"
+    if etype == "code":
+        return "<code>", "</code>"
+    if etype == "pre":
+        lang = e.get("language", "")
+        return f'<pre><code class="language-{lang}">' if lang else "<pre>", ("</code></pre>" if lang else "</pre>")
+    if etype == "spoiler":
+        return '<span class="tg-spoiler">', "</span>"
+    if etype == "text_link":
+        url = e.get("url", "")
+        return f'<a href="{url}">', "</a>"
+    return "", ""
+
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
@@ -280,7 +364,12 @@ async def msg_got_voice(message: Message, state: FSMContext, bot: Bot) -> None:
     if data.get("content_type") != "voice":
         await _wrong_content_type(message, state, bot)
         return
-    await state.update_data(file_id=message.voice.file_id, file_size=message.voice.file_size)
+    local_path = await _download_file(bot, message.voice.file_id, "voice")
+    await state.update_data(
+        file_id=message.voice.file_id, 
+        file_size=message.voice.file_size,
+        local_path=local_path
+    )
     await _proceed_to_year(message, state, bot)
 
 
@@ -295,11 +384,16 @@ async def msg_got_video_note(message: Message, state: FSMContext, bot: Bot) -> N
         await bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=data["bot_msg_id"],
-            text=f"⚠️ Файл слишком большой (максимум 30 МБ).\n\n{CONTENT_PROMPT['video_note']}",
+            text=f"⚠️ Файл слишком большой (максимум 40 МБ).\n\n{CONTENT_PROMPT['video_note']}",
             reply_markup=kb_home(),
         )
         return
-    await state.update_data(file_id=message.video_note.file_id, file_size=message.video_note.file_size)
+    local_path = await _download_file(bot, message.video_note.file_id, "video_note")
+    await state.update_data(
+        file_id=message.video_note.file_id,
+        file_size=message.video_note.file_size,
+        local_path=local_path,
+    )
     await _proceed_to_year(message, state, bot)
 
 
@@ -314,11 +408,16 @@ async def msg_got_video(message: Message, state: FSMContext, bot: Bot) -> None:
         await bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=data["bot_msg_id"],
-            text=f"⚠️ Файл слишком большой (максимум 30 МБ).\n\n{CONTENT_PROMPT['video']}",
+            text=f"⚠️ Файл слишком большой (максимум 40 МБ).\n\n{CONTENT_PROMPT['video']}",
             reply_markup=kb_home(),
         )
         return
-    await state.update_data(file_id=message.video.file_id, file_size=message.video.file_size)
+    local_path = await _download_file(bot, message.video.file_id, "video")
+    await state.update_data(
+        file_id=message.video.file_id,
+        file_size=message.video.file_size,
+        local_path=local_path,
+    )
     await _proceed_to_year(message, state, bot)
 
 
@@ -358,6 +457,7 @@ async def cb_year_record(callback: CallbackQuery, state: FSMContext, session) ->
         deliver_at=deliver_at,
         telegram_file_id=data.get("file_id"),
         file_size=data.get("file_size"),
+        local_path=data.get("local_path"),
         text=data.get("text_content"),
         entities=data.get("entities_json"),
     )
@@ -407,11 +507,12 @@ async def cb_msg_view(callback: CallbackQuery, state: FSMContext, session) -> No
     elif msg.content_type == ContentType.video:
         sent = await callback.message.answer_video(msg.telegram_file_id)
     elif msg.content_type == ContentType.text:
-        entities = None
         if msg.entities:
             raw = json.loads(msg.entities)
-            entities = [MessageEntity(**e) for e in raw]
-        sent = await callback.message.answer(msg.text, entities=entities)
+            html_text = entities_to_html(msg.text, raw)
+        else:
+            html_text = _escape_html(msg.text)
+        sent = await callback.message.answer(html_text, parse_mode="HTML")
 
     await state.update_data(media_msg_id=sent.message_id)
     # Меняем клавиатуру карточки — убираем кнопку "Посмотреть"

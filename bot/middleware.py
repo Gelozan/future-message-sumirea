@@ -23,12 +23,18 @@ class ContentGuardMiddleware(BaseMiddleware):
 
     async def __call__(self, handler, event: TelegramObject, data: dict[str, Any]) -> Any:
         if isinstance(event, Message):
+            fsm_context = data.get("state")
+            if fsm_context:
+                current_state = await fsm_context.get_state()
+                if current_state == "RecordMessage:waiting_content":
+                    return await handler(event, data)
+
             if event.content_type not in ALLOWED_CONTENT_TYPES:
                 try:
                     await event.delete()
                 except Exception:
                     pass
-                return  # не идём дальше по цепочке хендлеров
+                return
         return await handler(event, data)
 
 

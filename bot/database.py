@@ -58,6 +58,7 @@ async def save_user_message(
     content_type: ContentType,
     deliver_at: date,
     telegram_file_id: str | None = None,
+    local_path: str | None = None,
     file_size: int | None = None,
     text: str | None = None,
     entities: str | None = None,
@@ -75,6 +76,7 @@ async def save_user_message(
     msg = Message(
         user_id=user.id,
         content_type=content_type,
+        local_path=local_path,
         telegram_file_id=telegram_file_id,
         file_size=file_size,
         text=text,
