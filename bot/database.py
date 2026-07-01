@@ -1,3 +1,4 @@
+import os
 from datetime import date
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -68,6 +69,12 @@ async def save_user_message(
     user = await get_or_create_user(session, telegram_id, "")
     old = await get_user_message(session, telegram_id)
     if old:
+        # Удаляем физический файл если есть
+        if old.local_path and os.path.exists(old.local_path):
+            try:
+                os.remove(old.local_path)
+            except Exception:
+                pass  # файл уже удалён или нет прав — не критично
         if old.delivery:
             await session.delete(old.delivery)
         await session.delete(old)
