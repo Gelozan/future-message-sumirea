@@ -27,7 +27,14 @@ def kb_home() -> InlineKeyboardMarkup:
 def kb_confirm_rewrite() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Да, перезаписать", callback_data="confirm_rewrite")
-    builder.button(text="❌ Отмена", callback_data="msg_my_message_back")
+    builder.button(text="❌ Отмена", callback_data="menu_my_message")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def kb_confirm_main_menu_rewrite() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Да, перезаписать", callback_data="confirm_rewrite")
+    builder.button(text="❌ Отмена", callback_data="menu_home")
     builder.adjust(1)
     return builder.as_markup()
 

@@ -6,20 +6,19 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from bot.config import settings
-from bot.middleware import DbSessionMiddleware
+from bot.middleware import DbSessionMiddleware, ContentGuardMiddleware, CollectionWindowMiddleware
 from bot.handlers import router
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    bot = Bot(
-        token=settings.bot_token,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
+    bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
 
     dp.update.middleware(DbSessionMiddleware())
+    dp.message.middleware(ContentGuardMiddleware())
+    dp.update.middleware(CollectionWindowMiddleware())
     dp.include_router(router)
 
     await dp.start_polling(bot)

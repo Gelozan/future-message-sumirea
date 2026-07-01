@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, MessageEntity
 
 from bot.keyboards import (
-    kb_terms, kb_main_menu, kb_home, kb_confirm_rewrite,
+    kb_terms, kb_main_menu, kb_home, kb_confirm_rewrite, kb_confirm_main_menu_rewrite,
     kb_content_type, kb_choose_year, kb_my_message, kb_confirm_delete,
 )
 from bot.database import (
@@ -47,12 +47,6 @@ CONTENT_TYPE_LABELS = {
     ContentType.text: "✍️ Текст",
 }
 
-YEAR_TO_DATE = {
-    "year_2027": date(2027, 6, 30),
-    "year_2028": date(2028, 6, 30),
-    "year_2029": date(2029, 6, 30),
-}
-
 CONTENT_PROMPT = {
     "voice": "🎤 Отправьте голосовое сообщение:",
     "video_note": "⭕ Запишите видеокружок:",
@@ -78,8 +72,7 @@ async def _show_main_menu(target: Message | CallbackQuery, state: FSMContext) ->
         await target.answer(text, reply_markup=kb_main_menu())
 
 
-async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session) -> None:
-    """Экран 7: редактируем карточку и отправляем контент отдельным сообщением."""
+async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session, state: FSMContext) -> None:
     msg = await get_user_message(session, telegram_id)
     label = CONTENT_TYPE_LABELS.get(msg.content_type, msg.content_type.value)
     deliver_at = msg.delivery.deliver_at
@@ -91,19 +84,47 @@ async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session) -
     )
     await bot_msg.edit_text(card_text, reply_markup=kb_my_message(), parse_mode="HTML")
 
+    # Удаляем предыдущее медиа-сообщение если было
+    data = await state.get_data()
+    prev_media_id = data.get("media_msg_id")
+    if prev_media_id:
+        try:
+            await bot_msg.bot.delete_message(chat_id=bot_msg.chat.id, message_id=prev_media_id)
+        except Exception:
+            pass
+
+    # Отправляем контент и сохраняем message_id
     if msg.content_type == ContentType.voice:
-        await bot_msg.answer_voice(msg.telegram_file_id)
+        sent = await bot_msg.answer_voice(msg.telegram_file_id)
     elif msg.content_type == ContentType.video_note:
-        await bot_msg.answer_video_note(msg.telegram_file_id)
+        sent = await bot_msg.answer_video_note(msg.telegram_file_id)
     elif msg.content_type == ContentType.video:
-        await bot_msg.answer_video(msg.telegram_file_id)
+        sent = await bot_msg.answer_video(msg.telegram_file_id)
     elif msg.content_type == ContentType.text:
         entities = None
         if msg.entities:
             raw = json.loads(msg.entities)
             entities = [MessageEntity(**e) for e in raw]
-        await bot_msg.answer(msg.text, entities=entities)
+        sent = await bot_msg.answer(msg.text, entities=entities)
 
+    await state.update_data(media_msg_id=sent.message_id)
+
+async def _cleanup_media(state: FSMContext, bot: Bot, chat_id: int) -> None:
+    data = await state.get_data()
+    media_msg_id = data.get("media_msg_id")
+    if media_msg_id:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=media_msg_id)
+        except Exception:
+            pass
+        await state.update_data(media_msg_id=None)
+
+def get_delivery_date(year_callback: str) -> date:
+    years_map = {"year_2027": 1, "year_2028": 2, "year_2029": 3}
+    years = years_map[year_callback]
+    
+    today = date.today()
+    return today.replace(year=today.year + years)
 
 # ---------------------------------------------------------------------------
 # /start
@@ -175,6 +196,7 @@ async def cb_terms_decline(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "menu_home")
 async def cb_menu_home(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
+    await _cleanup_media(state, callback.bot, callback.message.chat.id)
     await _show_main_menu(callback, state)
 
 
@@ -185,7 +207,7 @@ async def cb_menu_record(callback: CallbackQuery, state: FSMContext, session) ->
     if existing:
         await callback.message.edit_text(
             "⚠️ У вас уже есть послание. Перезаписать его?",
-            reply_markup=kb_confirm_rewrite(),
+            reply_markup=kb_confirm_main_menu_rewrite(),
         )
     else:
         await state.set_state(RecordMessage.choosing_type)
@@ -199,7 +221,7 @@ async def cb_menu_my_message(callback: CallbackQuery, state: FSMContext, session
     if not existing:
         await callback.message.edit_text("📭 У вас пока нет послания.", reply_markup=kb_home())
     else:
-        await _show_my_message_screen(callback.message, callback.from_user.id, session)
+        await _show_my_message_screen(callback.message, callback.from_user.id, session, state)
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +233,7 @@ async def cb_confirm_rewrite(callback: CallbackQuery, state: FSMContext) -> None
     await callback.answer()
     await state.set_state(RecordMessage.choosing_type)
     await callback.message.edit_text("Выберите тип послания:", reply_markup=kb_content_type())
+    await _cleanup_media(state, callback.bot, callback.message.chat.id)
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +332,7 @@ async def msg_wrong_type(message: Message) -> None:
 @router.callback_query(RecordMessage.choosing_year, F.data.in_({"year_2027", "year_2028", "year_2029"}))
 async def cb_year_record(callback: CallbackQuery, state: FSMContext, session) -> None:
     await callback.answer()
-    deliver_at = YEAR_TO_DATE[callback.data]
+    deliver_at = get_delivery_date(callback.data)
     data = await state.get_data()
     ct_str = data["content_type"]
 
@@ -343,7 +366,7 @@ async def cb_year_record(callback: CallbackQuery, state: FSMContext, session) ->
 @router.callback_query(ChangeYear.choosing_year, F.data.in_({"year_2027", "year_2028", "year_2029"}))
 async def cb_year_change(callback: CallbackQuery, state: FSMContext, session) -> None:
     await callback.answer()
-    deliver_at = YEAR_TO_DATE[callback.data]
+    deliver_at = get_delivery_date(callback.data)
     await update_delivery_year(session, callback.from_user.id, deliver_at)
     await state.clear()
     await callback.message.edit_text(
@@ -364,7 +387,7 @@ async def cb_msg_rewrite(callback: CallbackQuery, state: FSMContext) -> None:
         "⚠️ У вас уже есть послание. Перезаписать его?",
         reply_markup=kb_confirm_rewrite(),
     )
-
+    await _cleanup_media(state, callback.bot, callback.message.chat.id) 
 
 @router.callback_query(F.data == "msg_change_year")
 async def cb_msg_change_year(callback: CallbackQuery, state: FSMContext) -> None:
@@ -374,15 +397,17 @@ async def cb_msg_change_year(callback: CallbackQuery, state: FSMContext) -> None
         "📅 Через сколько лет вы хотите получить послание?",
         reply_markup=kb_choose_year(),
     )
+    await _cleanup_media(state, callback.bot, callback.message.chat.id)
 
 
 @router.callback_query(F.data == "msg_delete")
-async def cb_msg_delete(callback: CallbackQuery) -> None:
+async def cb_msg_delete(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.edit_text(
         "⚠️ Вы уверены? Послание будет удалено безвозвратно.",
         reply_markup=kb_confirm_delete(),
     )
+    await _cleanup_media(state, callback.bot, callback.message.chat.id)
 
 
 @router.callback_query(F.data == "msg_my_message_back")
@@ -390,8 +415,9 @@ async def cb_msg_my_message_back(callback: CallbackQuery, state: FSMContext, ses
     await callback.answer()
     existing = await get_user_message(session, callback.from_user.id)
     if existing:
-        await _show_my_message_screen(callback.message, callback.from_user.id, session)
+        await _show_my_message_screen(callback.message, callback.from_user.id, session, state)
     else:
+        await _cleanup_media(state, callback.bot, callback.message.chat.id)
         await _show_main_menu(callback, state)
 
 
@@ -404,4 +430,5 @@ async def cb_confirm_delete_exec(callback: CallbackQuery, state: FSMContext, ses
     await callback.answer()
     await delete_user_message(session, callback.from_user.id)
     await state.clear()
+    await _cleanup_media(state, callback.bot, callback.message.chat.id)
     await callback.message.edit_text("🗑 Послание удалено.", reply_markup=kb_home())
