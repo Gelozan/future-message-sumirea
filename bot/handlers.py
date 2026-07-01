@@ -57,7 +57,7 @@ CONTENT_PROMPT = {
     "text": "✍️ Напишите текстовое послание:",
 }
 
-VIDEO_SIZE_LIMIT = 40 * 1024 * 1024
+VIDEO_SIZE_LIMIT = 20 * 1024 * 1024
 
 MEDIA_DIR = Path("/app/media")
 
@@ -132,7 +132,7 @@ async def _cleanup_media(state: FSMContext, bot: Bot, chat_id: int) -> None:
         await state.update_data(media_msg_id=None)
 
 def get_delivery_date(year_callback: str) -> date:
-    years_map = {"year_2027": 1, "year_2028": 2, "year_2029": 3}
+    years_map = {"year_1": 1, "year_2": 2, "year_3": 3}
     years = years_map[year_callback]
     
     today = date.today()
@@ -384,7 +384,7 @@ async def msg_got_video_note(message: Message, state: FSMContext, bot: Bot) -> N
         await bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=data["bot_msg_id"],
-            text=f"⚠️ Файл слишком большой (максимум 40 МБ).\n\n{CONTENT_PROMPT['video_note']}",
+            text=f"⚠️ Файл слишком большой (максимум 20 МБ).\n\n{CONTENT_PROMPT['video_note']}",
             reply_markup=kb_home(),
         )
         return
@@ -408,7 +408,7 @@ async def msg_got_video(message: Message, state: FSMContext, bot: Bot) -> None:
         await bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=data["bot_msg_id"],
-            text=f"⚠️ Файл слишком большой (максимум 40 МБ).\n\n{CONTENT_PROMPT['video']}",
+            text=f"⚠️ Файл слишком большой (максимум 20 МБ).\n\n{CONTENT_PROMPT['video']}",
             reply_markup=kb_home(),
         )
         return
@@ -443,7 +443,7 @@ async def msg_wrong_type(message: Message, state: FSMContext, bot: Bot) -> None:
 # Экран 6 — выбор года (первая запись)
 # ---------------------------------------------------------------------------
 
-@router.callback_query(RecordMessage.choosing_year, F.data.in_({"year_2027", "year_2028", "year_2029"}))
+@router.callback_query(RecordMessage.choosing_year, F.data.in_({"year_1", "year_2", "year_3"}))
 async def cb_year_record(callback: CallbackQuery, state: FSMContext, session) -> None:
     await callback.answer()
     deliver_at = get_delivery_date(callback.data)
@@ -478,7 +478,7 @@ async def cb_year_record(callback: CallbackQuery, state: FSMContext, session) ->
 # Экран 6 — выбор года (изменение)
 # ---------------------------------------------------------------------------
 
-@router.callback_query(ChangeYear.choosing_year, F.data.in_({"year_2027", "year_2028", "year_2029"}))
+@router.callback_query(ChangeYear.choosing_year, F.data.in_({"year_1", "year_2", "year_3"}))
 async def cb_year_change(callback: CallbackQuery, state: FSMContext, session) -> None:
     await callback.answer()
     deliver_at = get_delivery_date(callback.data)
