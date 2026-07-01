@@ -10,7 +10,7 @@ from aiogram.types import Message, CallbackQuery, MessageEntity
 
 from bot.keyboards import (
     kb_terms, kb_main_menu, kb_home, kb_confirm_rewrite, kb_confirm_main_menu_rewrite,
-    kb_content_type, kb_choose_year, kb_my_message, kb_confirm_delete,
+    kb_content_type, kb_choose_year, kb_my_message, kb_my_message_viewed, kb_confirm_delete, 
 )
 from bot.database import (
     get_or_create_user, get_user_message, save_user_message,
@@ -54,6 +54,7 @@ CONTENT_PROMPT = {
     "text": "✍️ Напишите текстовое послание:",
 }
 
+VIDEO_SIZE_LIMIT = 40 * 1024 * 1024
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -82,9 +83,8 @@ async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session, s
         f"Тип: {label}\n"
         f"Дата доставки: <b>{deliver_at.strftime('%d.%m.%Y')}</b>"
     )
-    await bot_msg.edit_text(card_text, reply_markup=kb_my_message(), parse_mode="HTML")
 
-    # Удаляем предыдущее медиа-сообщение если было
+    # Удаляем предыдущий медиа-контент если был
     data = await state.get_data()
     prev_media_id = data.get("media_msg_id")
     if prev_media_id:
@@ -92,22 +92,9 @@ async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session, s
             await bot_msg.bot.delete_message(chat_id=bot_msg.chat.id, message_id=prev_media_id)
         except Exception:
             pass
+        await state.update_data(media_msg_id=None)
 
-    # Отправляем контент и сохраняем message_id
-    if msg.content_type == ContentType.voice:
-        sent = await bot_msg.answer_voice(msg.telegram_file_id)
-    elif msg.content_type == ContentType.video_note:
-        sent = await bot_msg.answer_video_note(msg.telegram_file_id)
-    elif msg.content_type == ContentType.video:
-        sent = await bot_msg.answer_video(msg.telegram_file_id)
-    elif msg.content_type == ContentType.text:
-        entities = None
-        if msg.entities:
-            raw = json.loads(msg.entities)
-            entities = [MessageEntity(**e) for e in raw]
-        sent = await bot_msg.answer(msg.text, entities=entities)
-
-    await state.update_data(media_msg_id=sent.message_id)
+    await bot_msg.edit_text(card_text, reply_markup=kb_my_message(), parse_mode="HTML")
 
 async def _cleanup_media(state: FSMContext, bot: Bot, chat_id: int) -> None:
     data = await state.get_data()
@@ -126,6 +113,16 @@ def get_delivery_date(year_callback: str) -> date:
     today = date.today()
     return today.replace(year=today.year + years)
 
+async def _wrong_content_type(message: Message, state: FSMContext, bot: Bot) -> None:
+    data = await state.get_data()
+    await message.delete()
+    await bot.edit_message_text(
+        chat_id=message.chat.id,
+        message_id=data["bot_msg_id"],
+        text=f"❌ Неверный тип файла.\n\n{CONTENT_PROMPT.get(data.get('content_type', ''), 'Отправьте правильный тип файла:')}",
+        reply_markup=kb_home(),
+    )
+    
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
@@ -281,7 +278,7 @@ async def _proceed_to_year(message: Message, state: FSMContext, bot: Bot) -> Non
 async def msg_got_voice(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     if data.get("content_type") != "voice":
-        await message.delete()
+        await _wrong_content_type(message, state, bot)
         return
     await state.update_data(file_id=message.voice.file_id, file_size=message.voice.file_size)
     await _proceed_to_year(message, state, bot)
@@ -291,7 +288,16 @@ async def msg_got_voice(message: Message, state: FSMContext, bot: Bot) -> None:
 async def msg_got_video_note(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     if data.get("content_type") != "video_note":
+        await _wrong_content_type(message, state, bot)
+        return
+    if message.video_note.file_size and message.video_note.file_size > VIDEO_SIZE_LIMIT:
         await message.delete()
+        await bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=data["bot_msg_id"],
+            text=f"⚠️ Файл слишком большой (максимум 30 МБ).\n\n{CONTENT_PROMPT['video_note']}",
+            reply_markup=kb_home(),
+        )
         return
     await state.update_data(file_id=message.video_note.file_id, file_size=message.video_note.file_size)
     await _proceed_to_year(message, state, bot)
@@ -301,7 +307,16 @@ async def msg_got_video_note(message: Message, state: FSMContext, bot: Bot) -> N
 async def msg_got_video(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     if data.get("content_type") != "video":
+        await _wrong_content_type(message, state, bot)
+        return
+    if message.video.file_size and message.video.file_size > VIDEO_SIZE_LIMIT:
         await message.delete()
+        await bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=data["bot_msg_id"],
+            text=f"⚠️ Файл слишком большой (максимум 30 МБ).\n\n{CONTENT_PROMPT['video']}",
+            reply_markup=kb_home(),
+        )
         return
     await state.update_data(file_id=message.video.file_id, file_size=message.video.file_size)
     await _proceed_to_year(message, state, bot)
@@ -311,7 +326,7 @@ async def msg_got_video(message: Message, state: FSMContext, bot: Bot) -> None:
 async def msg_got_text(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     if data.get("content_type") != "text":
-        await message.delete()
+        await _wrong_content_type(message, state, bot)
         return
     entities_json = None
     if message.entities:
@@ -321,8 +336,8 @@ async def msg_got_text(message: Message, state: FSMContext, bot: Bot) -> None:
 
 
 @router.message(RecordMessage.waiting_content)
-async def msg_wrong_type(message: Message) -> None:
-    await message.delete()
+async def msg_wrong_type(message: Message, state: FSMContext, bot: Bot) -> None:
+    await _wrong_content_type(message, state, bot)
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +395,29 @@ async def cb_year_change(callback: CallbackQuery, state: FSMContext, session) ->
 # Экран 7 — кнопки карточки
 # ---------------------------------------------------------------------------
 
+@router.callback_query(F.data == "msg_view")
+async def cb_msg_view(callback: CallbackQuery, state: FSMContext, session) -> None:
+    await callback.answer()
+    msg = await get_user_message(session, callback.from_user.id)
+
+    if msg.content_type == ContentType.voice:
+        sent = await callback.message.answer_voice(msg.telegram_file_id)
+    elif msg.content_type == ContentType.video_note:
+        sent = await callback.message.answer_video_note(msg.telegram_file_id)
+    elif msg.content_type == ContentType.video:
+        sent = await callback.message.answer_video(msg.telegram_file_id)
+    elif msg.content_type == ContentType.text:
+        entities = None
+        if msg.entities:
+            raw = json.loads(msg.entities)
+            entities = [MessageEntity(**e) for e in raw]
+        sent = await callback.message.answer(msg.text, entities=entities)
+
+    await state.update_data(media_msg_id=sent.message_id)
+    # Меняем клавиатуру карточки — убираем кнопку "Посмотреть"
+    await callback.message.edit_reply_markup(reply_markup=kb_my_message_viewed())
+
+    
 @router.callback_query(F.data == "msg_rewrite")
 async def cb_msg_rewrite(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()

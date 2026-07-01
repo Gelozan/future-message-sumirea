@@ -52,14 +52,27 @@ def kb_content_type() -> InlineKeyboardMarkup:
 
 def kb_choose_year() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="2027", callback_data="year_2027")
-    builder.button(text="2028", callback_data="year_2028")
-    builder.button(text="2029", callback_data="year_2029")
+    builder.button(text="Через 1 год", callback_data="year_2027")
+    builder.button(text="Через 2 года", callback_data="year_2028")
+    builder.button(text="Через 3 года", callback_data="year_2029")
     builder.adjust(3)
     return builder.as_markup()
 
 
 def kb_my_message() -> InlineKeyboardMarkup:
+    """Карточка послания — без контента (первый показ)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👁 Посмотреть послание", callback_data="msg_view")
+    builder.button(text="✏️ Перезаписать", callback_data="msg_rewrite")
+    builder.button(text="📅 Изменить год", callback_data="msg_change_year")
+    builder.button(text="🗑 Удалить", callback_data="msg_delete")
+    builder.button(text="⬅️ Назад", callback_data="menu_home")
+    builder.adjust(1, 2, 1, 1)
+    return builder.as_markup()
+
+
+def kb_my_message_viewed() -> InlineKeyboardMarkup:
+    """Карточка послания — после просмотра контента."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Перезаписать", callback_data="msg_rewrite")
     builder.button(text="📅 Изменить год", callback_data="msg_change_year")
