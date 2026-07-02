@@ -1,0 +1,3 @@
+# На VPS выполнить один раз после деплоя:
+(crontab -l 2>/dev/null; echo "0 3 * * * docker exec fm_postgres pg_dump -U \$POSTGRES_USER -Fc \$POSTGRES_DB > /opt/fm_backups/db_\$(date +\%Y-\%m-\%d).dump 2>/dev/null") | crontab -
+sudo mkdir -p /opt/fm_backups
