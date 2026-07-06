@@ -187,7 +187,7 @@ async def cmd_start(message: Message, state: FSMContext, session) -> None:
         sent = await message.answer_photo(
             MAIN_PHOTO,
             caption=(
-                "Здравствуйте!\n\nДаёте ли Вы согласие на обработку персональных данных в соответствии с 152-ФЗ?",
+                "Здравствуйте!\n\nДаёте ли Вы согласие на обработку персональных данных в соответствии с 152-ФЗ?"
             ),
             reply_markup=kb_terms(),
         )
