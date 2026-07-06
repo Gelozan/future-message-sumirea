@@ -55,7 +55,7 @@ class Delivery(Base):
     message_id: Mapped[int] = mapped_column(ForeignKey("messages.id"), nullable=False)
     deliver_at: Mapped[date] = mapped_column(Date, nullable=False)
     sent: Mapped[bool] = mapped_column(Boolean, default=False)
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed: Mapped[bool] = mapped_column(Boolean, default=False)
     fail_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
 

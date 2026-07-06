@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot/ ./bot/
+COPY worker/ ./worker/
 COPY infrastructure/ ./infrastructure/
 COPY alembic.ini .
 

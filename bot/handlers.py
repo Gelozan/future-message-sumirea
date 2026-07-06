@@ -20,6 +20,7 @@ from bot.database import (
     update_delivery_year, delete_user_message,
 )
 from bot.models import ContentType
+from bot.formatting import entities_to_html, _escape_html
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -147,65 +148,6 @@ async def _wrong_content_type(message: Message, state: FSMContext, bot: Bot) -> 
         text=f"❌ Неверный тип файла.\n\n{CONTENT_PROMPT.get(data.get('content_type', ''), 'Отправьте правильный тип файла:')}",
         reply_markup=kb_home(),
     )
-
-def entities_to_html(text: str, entities: list[dict]) -> str:
-    """Конвертирует текст + entities в HTML-разметку."""
-    if not entities:
-        return _escape_html(text)
-
-    # Теги открытия/закрытия по позиции
-    opens: dict[int, list[str]] = {}
-    closes: dict[int, list[str]] = {}
-
-    for e in entities:
-        offset = e["offset"]
-        end = offset + e["length"]
-        etype = e["type"]
-
-        tag_open, tag_close = _entity_tags(e)
-        if tag_open:
-            opens.setdefault(offset, []).append(tag_open)
-            closes.setdefault(end, []).insert(0, tag_close)
-
-    result = []
-    for i, char in enumerate(text):
-        for tag in closes.get(i, []):
-            result.append(tag)
-        for tag in opens.get(i, []):
-            result.append(tag)
-        result.append(_escape_html(char))
-    # Закрываем теги в конце
-    for tag in closes.get(len(text), []):
-        result.append(tag)
-
-    return "".join(result)
-
-
-def _escape_html(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _entity_tags(e: dict) -> tuple[str, str]:
-    etype = e["type"]
-    if etype == "bold":
-        return "<b>", "</b>"
-    if etype == "italic":
-        return "<i>", "</i>"
-    if etype == "underline":
-        return "<u>", "</u>"
-    if etype == "strikethrough":
-        return "<s>", "</s>"
-    if etype == "code":
-        return "<code>", "</code>"
-    if etype == "pre":
-        lang = e.get("language", "")
-        return f'<pre><code class="language-{lang}">' if lang else "<pre>", ("</code></pre>" if lang else "</pre>")
-    if etype == "spoiler":
-        return '<span class="tg-spoiler">', "</span>"
-    if etype == "text_link":
-        url = e.get("url", "")
-        return f'<a href="{url}">', "</a>"
-    return "", ""
 
 # ---------------------------------------------------------------------------
 # /start
