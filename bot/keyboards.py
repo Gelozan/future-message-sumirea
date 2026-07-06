@@ -13,7 +13,7 @@ def kb_terms() -> InlineKeyboardMarkup:
 def kb_main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="📝 Записать послание", callback_data="menu_record")
-    builder.button(text="📋 Моё послание", callback_data="menu_my_message")
+    builder.button(text="✉️ Моё послание", callback_data="menu_my_message")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -42,7 +42,7 @@ def kb_confirm_main_menu_rewrite() -> InlineKeyboardMarkup:
 def kb_content_type() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🎤 Голосовое", callback_data="type_voice")
-    builder.button(text="⭕ Кружок", callback_data="type_video_note")
+    builder.button(text="🔘 Кружок", callback_data="type_video_note")
     builder.button(text="🎥 Видео", callback_data="type_video")
     builder.button(text="✍️ Текст", callback_data="type_text")
     builder.button(text="⬅️ Назад", callback_data="menu_home")

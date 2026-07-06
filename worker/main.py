@@ -19,8 +19,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MSK = ZoneInfo("Europe/Moscow")
-SEND_HOUR = 3
-SEND_MINUTE = 18
+SEND_HOUR = 12
+SEND_MINUTE = 0
 CHECK_INTERVAL = 60
 
 

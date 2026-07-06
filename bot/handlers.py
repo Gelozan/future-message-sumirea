@@ -9,7 +9,7 @@ from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, MessageEntity
+from aiogram.types import Message, CallbackQuery, MessageEntity, FSInputFile
 
 from bot.keyboards import (
     kb_terms, kb_main_menu, kb_home, kb_confirm_rewrite, kb_confirm_main_menu_rewrite,
@@ -46,14 +46,14 @@ class ChangeYear(StatesGroup):
 
 CONTENT_TYPE_LABELS = {
     ContentType.voice: "🎤 Голосовое",
-    ContentType.video_note: "⭕ Кружок",
+    ContentType.video_note: "🔘 Кружок",
     ContentType.video: "🎥 Видео",
     ContentType.text: "✍️ Текст",
 }
 
 CONTENT_PROMPT = {
     "voice": "🎤 Отправьте голосовое сообщение:",
-    "video_note": "⭕ Запишите видеокружок:",
+    "video_note": "🔘 Запишите видеосообщение:",
     "video": "🎥 Отправьте видео:",
     "text": "✍️ Напишите текстовое послание:",
 }
@@ -61,6 +61,9 @@ CONTENT_PROMPT = {
 VIDEO_SIZE_LIMIT = 20 * 1024 * 1024
 
 MEDIA_DIR = Path("/app/media")
+
+MAIN_PHOTO_PATH = "assets/main_photo.png"
+MAIN_PHOTO = FSInputFile(MAIN_PHOTO_PATH)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -89,14 +92,15 @@ async def _download_file(bot: Bot, file_id: str, content_type: str) -> str | Non
 async def _show_main_menu(target: Message | CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     text = (
-        "🎓 Поздравляем с выпуском!\n\n"
-        "Этот бот позволяет записать послание самому себе и получить его через 1, 2 или 3 года. "
-        "Выбери действие:"
+        "🎓 <b>Поздравляем с выпуском!</b>\n\n"
+        "Сегодня <b>важный день</b> — Вы закрываете одну главу и начинаете <b>новую</b>.\n\n"
+        "Этот бот поможет сохранить частичку настоящего момента: Вы можете написать послание самому себе — <i>о своих мечтах, планах, мыслях или чувствах</i> — и получить его спустя время.\n\n"
+        "Выберите действие:"
     )
     if isinstance(target, CallbackQuery):
-        await target.message.edit_text(text, reply_markup=kb_main_menu())
+        await target.message.edit_caption(caption=text, reply_markup=kb_main_menu())
     else:
-        await target.answer(text, reply_markup=kb_main_menu())
+        await target.answer_photo(MAIN_PHOTO, caption=text, reply_markup=kb_main_menu())
 
 
 async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session, state: FSMContext) -> None:
@@ -105,7 +109,7 @@ async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session, s
     deliver_at = msg.delivery.deliver_at
 
     card_text = (
-        f"📋 <b>Ваше послание</b>\n\n"
+        f"✉️ <b>Ваше послание</b>\n\n"
         f"Тип: {label}\n"
         f"Дата доставки: <b>{deliver_at.strftime('%d.%m.%Y')}</b>"
     )
@@ -120,7 +124,7 @@ async def _show_my_message_screen(bot_msg: Message, telegram_id: int, session, s
             pass
         await state.update_data(media_msg_id=None)
 
-    await bot_msg.edit_text(card_text, reply_markup=kb_my_message(), parse_mode="HTML")
+    await bot_msg.edit_caption(caption=card_text, reply_markup=kb_my_message(), parse_mode="HTML")
 
 async def _cleanup_media(state: FSMContext, bot: Bot, chat_id: int) -> None:
     data = await state.get_data()
@@ -142,10 +146,10 @@ def get_delivery_date(year_callback: str) -> date:
 async def _wrong_content_type(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     await message.delete()
-    await bot.edit_message_text(
+    await bot.edit_message_caption(
         chat_id=message.chat.id,
         message_id=data["bot_msg_id"],
-        text=f"❌ Неверный тип файла.\n\n{CONTENT_PROMPT.get(data.get('content_type', ''), 'Отправьте правильный тип файла:')}",
+        caption=f"❌ Неверный тип файла.\n\n{CONTENT_PROMPT.get(data.get('content_type', ''), 'Отправьте правильный тип файла:')}",
         reply_markup=kb_home(),
     )
 
@@ -169,16 +173,22 @@ async def cmd_start(message: Message, state: FSMContext, session) -> None:
     )
 
     if user.accepted_terms:
-        sent = await message.answer(
-            "🎓 Поздравляем с выпуском!\n\n"
-            "Этот бот позволяет записать послание самому себе и получить его через 1, 2 или 3 года. "
-            "Выбери действие:",
+        sent = await message.answer_photo(
+            MAIN_PHOTO,
+            caption=(
+                "🎓 <b>Поздравляем с выпуском!</b>\n\n"
+                "Сегодня <b>важный день</b> — Вы закрываете одну главу и начинаете <b>новую</b>.\n\n"
+                "Этот бот поможет сохранить частичку настоящего момента: Вы можете написать послание самому себе — <i>о своих мечтах, планах, мыслях или чувствах</i> — и получить его спустя время.\n\n"
+                "Выберите действие:"
+            ),
             reply_markup=kb_main_menu(),
         )
     else:
-        sent = await message.answer(
-            "👋 Привет!\n\nВы даёте согласие на обработку персональных данных "
-            "в соответствии с ФЗ-152?",
+        sent = await message.answer_photo(
+            MAIN_PHOTO,
+            caption=(
+                "Здравствуйте!\n\nДаёте ли Вы согласие на обработку персональных данных в соответствии с 152-ФЗ?",
+            ),
             reply_markup=kb_terms(),
         )
     await state.update_data(bot_msg_id=sent.message_id)
@@ -205,9 +215,8 @@ async def cb_terms_accept(callback: CallbackQuery, state: FSMContext, session) -
 @router.callback_query(F.data == "terms_decline")
 async def cb_terms_decline(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await callback.message.edit_text(
-        "❌ Без согласия использование бота невозможно.\n\n"
-        "Напишите /start, если передумаете.",
+    await callback.message.edit_caption(
+        caption="❌ Без согласия использование бота невозможно.\n\nНапишите /start, если передумаете.",
         reply_markup=None,
     )
 
@@ -228,13 +237,13 @@ async def cb_menu_record(callback: CallbackQuery, state: FSMContext, session) ->
     await callback.answer()
     existing = await get_user_message(session, callback.from_user.id)
     if existing:
-        await callback.message.edit_text(
-            "⚠️ У вас уже есть послание. Перезаписать его?",
+        await callback.message.edit_caption(
+            caption="⚠️ У Вас уже есть послание. Перезаписать его?",
             reply_markup=kb_confirm_main_menu_rewrite(),
         )
     else:
         await state.set_state(RecordMessage.choosing_type)
-        await callback.message.edit_text("Выберите тип послания:", reply_markup=kb_content_type())
+        await callback.message.edit_caption(caption="Выберите тип послания:", reply_markup=kb_content_type())
 
 
 @router.callback_query(F.data == "menu_my_message")
@@ -242,7 +251,7 @@ async def cb_menu_my_message(callback: CallbackQuery, state: FSMContext, session
     await callback.answer()
     existing = await get_user_message(session, callback.from_user.id)
     if not existing:
-        await callback.message.edit_text("📭 У вас пока нет послания.", reply_markup=kb_home())
+        await callback.message.edit_caption(caption="📭 У Вас пока нет послания.", reply_markup=kb_home())
     else:
         await _show_my_message_screen(callback.message, callback.from_user.id, session, state)
 
@@ -255,7 +264,7 @@ async def cb_menu_my_message(callback: CallbackQuery, state: FSMContext, session
 async def cb_confirm_rewrite(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(RecordMessage.choosing_type)
-    await callback.message.edit_text("Выберите тип послания:", reply_markup=kb_content_type())
+    await callback.message.edit_caption(caption="Выберите тип послания:", reply_markup=kb_content_type())
     await _cleanup_media(state, callback.bot, callback.message.chat.id)
 
 
@@ -278,7 +287,7 @@ async def cb_choose_type(callback: CallbackQuery, state: FSMContext) -> None:
         bot_msg_id=callback.message.message_id,
     )
     await state.set_state(RecordMessage.waiting_content)
-    await callback.message.edit_text(CONTENT_PROMPT[content_type], reply_markup=kb_home())
+    await callback.message.edit_caption(caption=CONTENT_PROMPT[content_type], reply_markup=kb_home())
 
 
 # ---------------------------------------------------------------------------
@@ -292,10 +301,10 @@ async def _proceed_to_year(message: Message, state: FSMContext, bot: Bot) -> Non
         pass
     data = await state.get_data()
     await state.set_state(RecordMessage.choosing_year)
-    await bot.edit_message_text(
+    await bot.edit_message_caption(
         chat_id=message.chat.id,
         message_id=data["bot_msg_id"],
-        text="📅 Через сколько лет вы хотите получить послание?",
+        caption="📅 Через сколько лет Вы хотите получить послание?",
         reply_markup=kb_choose_year(),
     )
 
@@ -323,10 +332,10 @@ async def msg_got_video_note(message: Message, state: FSMContext, bot: Bot) -> N
         return
     if message.video_note.file_size and message.video_note.file_size > VIDEO_SIZE_LIMIT:
         await message.delete()
-        await bot.edit_message_text(
+        await bot.edit_message_caption(
             chat_id=message.chat.id,
             message_id=data["bot_msg_id"],
-            text=f"⚠️ Файл слишком большой (максимум 20 МБ).\n\n{CONTENT_PROMPT['video_note']}",
+            caption=f"⚠️ Файл слишком большой (максимум 20 МБ).\n\n{CONTENT_PROMPT['video_note']}",
             reply_markup=kb_home(),
         )
         return
@@ -347,10 +356,10 @@ async def msg_got_video(message: Message, state: FSMContext, bot: Bot) -> None:
         return
     if message.video.file_size and message.video.file_size > VIDEO_SIZE_LIMIT:
         await message.delete()
-        await bot.edit_message_text(
+        await bot.edit_message_caption(
             chat_id=message.chat.id,
             message_id=data["bot_msg_id"],
-            text=f"⚠️ Файл слишком большой (максимум 20 МБ).\n\n{CONTENT_PROMPT['video']}",
+            caption=f"⚠️ Файл слишком большой (максимум 20 МБ).\n\n{CONTENT_PROMPT['video']}",
             reply_markup=kb_home(),
         )
         return
@@ -406,11 +415,13 @@ async def cb_year_record(callback: CallbackQuery, state: FSMContext, session) ->
     await state.clear()
 
     label = CONTENT_TYPE_LABELS.get(ContentType(ct_str), ct_str)
-    await callback.message.edit_text(
-        f"✅ Послание сохранено!\n\n"
-        f"Тип: {label}\n"
-        f"Дата доставки: <b>{deliver_at.strftime('%d.%m.%Y')}</b>\n\n"
-        f"Мы пришлём его вам в этот день 🎉",
+    await callback.message.edit_caption(
+        caption=(
+            f"✅ Послание сохранено!\n\n"
+            f"Тип: {label}\n"
+            f"Дата доставки: <b>{deliver_at.strftime('%d.%m.%Y')}</b>\n\n"
+            f"Мы пришлём его Вам в этот день 🎉"
+        ),
         reply_markup=kb_home(),
         parse_mode="HTML",
     )
@@ -426,8 +437,8 @@ async def cb_year_change(callback: CallbackQuery, state: FSMContext, session) ->
     deliver_at = get_delivery_date(callback.data)
     await update_delivery_year(session, callback.from_user.id, deliver_at)
     await state.clear()
-    await callback.message.edit_text(
-        f"✅ Год доставки изменён на <b>{deliver_at.year}</b>.",
+    await callback.message.edit_caption(
+        caption=f"✅ Год доставки изменён на <b>{deliver_at.year}</b>.",
         reply_markup=kb_home(),
         parse_mode="HTML",
     )
@@ -464,8 +475,8 @@ async def cb_msg_view(callback: CallbackQuery, state: FSMContext, session) -> No
 @router.callback_query(F.data == "msg_rewrite")
 async def cb_msg_rewrite(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await callback.message.edit_text(
-        "⚠️ У вас уже есть послание. Перезаписать его?",
+    await callback.message.edit_caption(
+        caption="⚠️ У Вас уже есть послание. Перезаписать его?",
         reply_markup=kb_confirm_rewrite(),
     )
     await _cleanup_media(state, callback.bot, callback.message.chat.id) 
@@ -474,8 +485,8 @@ async def cb_msg_rewrite(callback: CallbackQuery, state: FSMContext) -> None:
 async def cb_msg_change_year(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(ChangeYear.choosing_year)
-    await callback.message.edit_text(
-        "📅 Через сколько лет вы хотите получить послание?",
+    await callback.message.edit_caption(
+        caption="📅 Через сколько лет Вы хотите получить послание?",
         reply_markup=kb_choose_year(),
     )
     await _cleanup_media(state, callback.bot, callback.message.chat.id)
@@ -484,8 +495,8 @@ async def cb_msg_change_year(callback: CallbackQuery, state: FSMContext) -> None
 @router.callback_query(F.data == "msg_delete")
 async def cb_msg_delete(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await callback.message.edit_text(
-        "⚠️ Вы уверены? Послание будет удалено безвозвратно.",
+    await callback.message.edit_caption(
+        caption="⚠️ Вы уверены? Послание будет удалено безвозвратно.",
         reply_markup=kb_confirm_delete(),
     )
     await _cleanup_media(state, callback.bot, callback.message.chat.id)
@@ -512,4 +523,4 @@ async def cb_confirm_delete_exec(callback: CallbackQuery, state: FSMContext, ses
     await delete_user_message(session, callback.from_user.id)
     await state.clear()
     await _cleanup_media(state, callback.bot, callback.message.chat.id)
-    await callback.message.edit_text("🗑 Послание удалено.", reply_markup=kb_home())
+    await callback.message.edit_caption(caption="🗑 Послание удалено.", reply_markup=kb_home())
